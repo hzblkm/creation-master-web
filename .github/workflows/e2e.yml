@@ -23,6 +23,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Install backend dependencies
         working-directory: backend
@@ -36,16 +47,18 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps ${{ matrix.browser }}
 
-      - name: Set backend env (SQLite)
+      - name: Set backend env (SQLite - isolated per job)
         working-directory: backend
         run: |
-          echo "DATABASE_URL=file:./prisma/dev.db" >> .env
+          echo "DATABASE_URL=file:./prisma/e2e.${{ matrix.browser }}.${{ github.run_id }}.db" >> .env
           echo "NODE_ENV=test" >> .env
           cat .env
 
-      - name: Prepare database schema (Prisma db push)
+      - name: Prepare database schema (clean and Prisma db push)
         working-directory: backend
-        run: npx prisma db push
+        run: |
+          rm -f prisma/e2e.*.db || true
+          npx prisma db push
 
       - name: Run E2E tests (Playwright - ${{ matrix.browser }})
         working-directory: frontend

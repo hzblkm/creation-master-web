@@ -25,8 +25,8 @@ export default defineConfig({
       timeout: 120_000,
       // 确保后端在 CI/本地都有可用的 SQLite 数据库
       env: {
-        // 指向后端已有的 SQLite 数据库文件位置
-        DATABASE_URL: 'file:./prisma/dev.db',
+        // 指向后端已有的 SQLite 数据库文件位置（优先使用外部注入的 DATABASE_URL）
+        DATABASE_URL: process.env.DATABASE_URL || 'file:./prisma/dev.db',
         NODE_ENV: process.env.NODE_ENV || 'test',
       },
     },
