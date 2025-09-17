@@ -9,6 +9,10 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
 
     steps:
       - name: Checkout repository
@@ -28,27 +32,39 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (${{ matrix.browser }})
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps ${{ matrix.browser }}
 
       - name: Set backend env (SQLite)
         working-directory: backend
         run: |
           echo "DATABASE_URL=file:./prisma/dev.db" >> .env
+          echo "NODE_ENV=test" >> .env
           cat .env
 
-      - name: Run E2E tests (Playwright)
+      - name: Prepare database schema (Prisma db push)
+        working-directory: backend
+        run: npx prisma db push
+
+      - name: Run E2E tests (Playwright - ${{ matrix.browser }})
         working-directory: frontend
         env:
-          # 让 Nest 判断为非生产环境，启用 __test__/reset
           NODE_ENV: test
-        run: npm run e2e:ci
+        run: npx playwright test -c playwright.config.ts --reporter=github --project=${{ matrix.browser }}
+
+      - name: Upload Playwright test-results (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-${{ matrix.browser }}
+          path: frontend/test-results
+          retention-days: 7
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: frontend/playwright-report
           retention-days: 7
