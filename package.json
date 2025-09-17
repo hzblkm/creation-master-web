@@ -1,0 +1,16 @@
+{
+  "name": "creation-master-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo orchestrator for backend (NestJS) and frontend (Vite + Playwright)",
+  "scripts": {
+    "install:all": "npm --prefix backend ci && npm --prefix frontend ci",
+    "dev": "concurrently -n BACKEND,FRONTEND -c magenta,cyan \"npm --prefix backend run start:dev\" \"npm --prefix frontend run dev\"",
+    "e2e:ci": "npm --prefix frontend run e2e:ci",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
