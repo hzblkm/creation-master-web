@@ -8,7 +8,12 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5173',
     headless: true,
-    trace: 'retain-on-failure',
+    // 在本地保留失败用例的 trace，CI 上仅在首次重试时记录
+    trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
+    // 仅在失败时保留截图
+    screenshot: 'only-on-failure',
+    // CI 上在首次重试时保存视频，便于问题定位
+    video: process.env.CI ? 'on-first-retry' : 'off',
   },
   webServer: [
     {
@@ -34,5 +39,7 @@ export default defineConfig({
   ],
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
 })
