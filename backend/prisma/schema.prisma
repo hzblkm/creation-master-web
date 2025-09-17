@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String    @id @default(uuid())
+  name      String
+  type      String
+  status    String    @default("draft")
+  createdAt DateTime  @map("created_at") @default(now())
+  updatedAt DateTime  @map("updated_at") @updatedAt
+
+  settings       Setting[]
+  chapters       Chapter[]
+  projectFacts   ProjectFact[]
+  foreshadowings Foreshadowing[]
+
+  @@map("projects")
+}
+
+model Setting {
+  id            String  @id @default(uuid())
+  projectId     String  @map("project_id")
+  category      String
+  type          String
+  content       Json // Use Json type for dynamic content
+  hierarchyLevel Int     @map("hierarchy_level") @default(0)
+  createdAt     DateTime @map("created_at") @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("settings")
+}
+
+model Chapter {
+  id        String  @id @default(uuid())
+  projectId String  @map("project_id")
+  title     String
+  content   String?
+  wordCount Int     @map("word_count") @default(0)
+  status    String  @default("draft")
+  orderIndex Int    @map("order_index") @default(0)
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  projectFacts ProjectFact[]
+  foreshadowings Foreshadowing[] @relation("ForeshadowingChapter")
+  revealedInForeshadowings Foreshadowing[] @relation("ForeshadowingRevealedInChapter")
+
+  @@map("chapters")
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @updatedAt
+
+  @@map("app_settings")
+}
+
+model ProjectFact {
+  id        String    @id @default(uuid())
+  projectId String    @map("project_id")
+  chapterId String?   @map("chapter_id")
+  category  String
+  entity    String
+  key       String
+  value     String
+  sourceText String?  @map("source_text")
+  createdAt DateTime  @map("created_at") @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter Chapter? @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+
+  @@map("project_facts")
+}
+
+model Foreshadowing {
+  id                   String    @id @default(uuid())
+  projectId            String    @map("project_id")
+  title                String
+  description          String?
+  chapterId            String?   @map("chapter_id")
+  revealedInChapterId  String?   @map("revealed_in_chapter_id")
+  status               String    @default("pending")
+  impact               String    @default("medium")
+  difficulty           String    @default("medium")
+  keywords             String?
+  notes                String?
+  createdAt            DateTime  @map("created_at") @default(now())
+  updatedAt            DateTime  @map("updated_at") @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter Chapter? @relation("ForeshadowingChapter", fields: [chapterId], references: [id], onDelete: SetNull)
+  revealedInChapter Chapter? @relation("ForeshadowingRevealedInChapter", fields: [revealedInChapterId], references: [id], onDelete: SetNull)
+
+  @@map("foreshadowings")
+}
