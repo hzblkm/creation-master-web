@@ -9,6 +9,10 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
 
     steps:
       - name: Checkout repository
@@ -19,6 +23,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Install backend dependencies
         working-directory: backend
@@ -28,27 +43,41 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Install Playwright browsers
+      - name: Install Playwright browsers (${{ matrix.browser }})
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps ${{ matrix.browser }}
 
-      - name: Set backend env (SQLite)
+      - name: Set backend env (SQLite - isolated per job)
         working-directory: backend
         run: |
-          echo "DATABASE_URL=file:./prisma/dev.db" >> .env
+          echo "DATABASE_URL=file:./prisma/e2e.${{ matrix.browser }}.${{ github.run_id }}.db" >> .env
+          echo "NODE_ENV=test" >> .env
           cat .env
 
-      - name: Run E2E tests (Playwright)
+      - name: Prepare database schema (clean and Prisma db push)
+        working-directory: backend
+        run: |
+          rm -f prisma/e2e.*.db || true
+          npx prisma db push
+
+      - name: Run E2E tests (Playwright - ${{ matrix.browser }})
         working-directory: frontend
         env:
-          # 让 Nest 判断为非生产环境，启用 __test__/reset
           NODE_ENV: test
-        run: npm run e2e:ci
+        run: npx playwright test -c playwright.config.ts --reporter=github --project=${{ matrix.browser }}
+
+      - name: Upload Playwright test-results (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-${{ matrix.browser }}
+          path: frontend/test-results
+          retention-days: 7
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: frontend/playwright-report
           retention-days: 7

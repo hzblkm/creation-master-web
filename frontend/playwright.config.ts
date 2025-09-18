@@ -8,7 +8,12 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5173',
     headless: true,
-    trace: 'retain-on-failure',
+    // 在本地保留失败用例的 trace，CI 上仅在首次重试时记录
+    trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
+    // 仅在失败时保留截图
+    screenshot: 'only-on-failure',
+    // CI 上在首次重试时保存视频，便于问题定位
+    video: process.env.CI ? 'on-first-retry' : 'off',
   },
   webServer: [
     {
@@ -20,8 +25,8 @@ export default defineConfig({
       timeout: 120_000,
       // 确保后端在 CI/本地都有可用的 SQLite 数据库
       env: {
-        // 指向后端已有的 SQLite 数据库文件位置
-        DATABASE_URL: 'file:./prisma/dev.db',
+        // 指向后端已有的 SQLite 数据库文件位置（优先使用外部注入的 DATABASE_URL）
+        DATABASE_URL: process.env.DATABASE_URL || 'file:./prisma/dev.db',
         NODE_ENV: process.env.NODE_ENV || 'test',
       },
     },
@@ -34,5 +39,7 @@ export default defineConfig({
   ],
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -18,6 +18,58 @@ const viewMode = ref<'table' | 'card'>('card')
 const form = ref<{ name: string; type: string }>({ name: '', type: 'novel' })
 const rowLoading = ref<Record<string, boolean>>({})
 
+// 新增：搜索与分页（客户端）
+const search = ref('')
+const currentPage = ref(1)
+const pageSize = ref(8)
+
+const filteredProjects = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return projects.value
+  return projects.value.filter((p) => {
+    const name = (p.name || '').toLowerCase()
+    const type = (p.type || '').toLowerCase()
+    const status = (p.status || '').toLowerCase()
+    return name.includes(q) || type.includes(q) || status.includes(q)
+  })
+})
+
+const sortedProjects = computed(() => {
+  return [...filteredProjects.value].sort((a, b) => {
+    const at = new Date(a.createdAt || 0).getTime()
+    const bt = new Date(b.createdAt || 0).getTime()
+    if (bt !== at) return bt - at
+    return (a.name || '').localeCompare(b.name || '')
+  })
+})
+
+const total = computed(() => sortedProjects.value.length)
+
+const pagedProjects = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return sortedProjects.value.slice(start, start + pageSize.value)
+})
+
+watch([search, projects], () => {
+  // 搜索或后端刷新后回到第 1 页
+  currentPage.value = 1
+})
+
+watch(total, (t) => {
+  // 当总数变少时，确保当前页不越界
+  const maxPage = Math.max(1, Math.ceil(t / pageSize.value))
+  if (currentPage.value > maxPage) currentPage.value = maxPage
+})
+
+function onPageChange(p: number) {
+  currentPage.value = p
+}
+
+function onSizeChange(s: number) {
+  pageSize.value = s
+  currentPage.value = 1
+}
+
 function formatTime(iso?: string) {
   if (!iso) return ''
   try {
@@ -27,14 +79,31 @@ function formatTime(iso?: string) {
   }
 }
 
+function isNameValid() {
+  const v = (form.value.name ?? '').trim()
+  return v.length >= 2 && v.length <= 64
+}
+
 async function createProject() {
-  if (!form.value.name?.trim()) {
+  // 防重复提交
+  if (loading.value) return
+
+  const trimmed = (form.value.name ?? '').trim()
+  if (!trimmed) {
     ElMessage.error('请输入项目名称')
+    return
+  }
+  if (trimmed.length < 2) {
+    ElMessage.error('名称至少 2 个字符')
+    return
+  }
+  if (trimmed.length > 64) {
+    ElMessage.error('名称不超过 64 个字符')
     return
   }
   try {
     loading.value = true
-    const payload = { name: form.value.name.trim(), type: form.value.type, status: 'draft' }
+    const payload = { name: trimmed, type: form.value.type, status: 'draft' }
     await axios.post('/api/projects', payload)
     form.value.name = ''
     await fetchProjects()
@@ -138,14 +207,15 @@ watch(viewMode, (v) => {
     <h2>项目列表</h2>
     <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap">
       <div style="display:flex; gap:8px; align-items:center">
-        <el-input v-model="form.name" placeholder="项目名称" style="width: 240px" @keyup.enter="createProject" />
+        <el-input v-model="form.name" placeholder="项目名称" style="width: 240px" @keyup.enter="createProject" maxlength="64" show-word-limit />
         <el-select v-model="form.type" placeholder="类型" style="width: 160px">
           <el-option label="小说" value="novel" />
           <el-option label="剧本" value="script" />
         </el-select>
-        <el-button type="primary" :loading="loading" @click="createProject">新建项目</el-button>
+        <el-button type="primary" :loading="loading" :disabled="loading || !isNameValid()" @click="createProject">新建项目</el-button>
       </div>
       <div style="display:flex; gap:8px; align-items:center">
+        <el-input v-model="search" placeholder="搜索项目" clearable style="width: 260px" />
         <el-radio-group v-model="viewMode" size="small">
           <el-radio-button label="table">表格视图</el-radio-button>
           <el-radio-button label="card">卡片视图</el-radio-button>
@@ -173,13 +243,13 @@ watch(viewMode, (v) => {
       <div v-else-if="!loading && projects.length === 0 && !loadError">
         <el-empty description="暂无项目">
           <div style="display:flex; gap:8px; justify-content:center">
-            <el-button type="primary" @click="createProject" :disabled="loading">新建项目</el-button>
+            <el-button type="primary" @click="createProject" :disabled="loading || !isNameValid()">新建项目</el-button>
             <el-button @click="refreshProjects" :disabled="loading">刷新</el-button>
           </div>
         </el-empty>
       </div>
       <div v-else class="card-grid">
-        <el-card v-for="p in projects" :key="p.id" shadow="hover">
+        <el-card v-for="p in pagedProjects" :key="p.id" shadow="hover">
           <template #header>
             <div class="clickable" style="display:flex;justify-content:space-between;align-items:center" @click="goDetail(p)">
               <span style="font-weight:600">{{ p.name }}</span>
@@ -202,11 +272,22 @@ watch(viewMode, (v) => {
           </div>
         </el-card>
       </div>
+      <div v-if="total > 0" style="display:flex;justify-content:center;margin-top:16px">
+        <el-pagination
+          :current-page="currentPage"
+          :page-size="pageSize"
+          :page-sizes="[8,12,16,24,32]"
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="total"
+          @current-change="onPageChange"
+          @size-change="onSizeChange"
+        />
+      </div>
     </div>
 
     <!-- 表格视图 -->
     <div v-else>
-      <el-table v-if="projects.length > 0" :data="projects" v-loading="loading" style="width: 100%">
+      <el-table v-if="projects.length > 0" :data="pagedProjects" v-loading="loading" style="width: 100%">
         <el-table-column prop="name" label="名称" />
         <el-table-column prop="type" label="类型" />
         <el-table-column prop="status" label="状态" />
@@ -228,10 +309,21 @@ watch(viewMode, (v) => {
       <div v-else-if="!loading && !loadError">
         <el-empty description="暂无项目">
           <div style="display:flex; gap:8px; justify-content:center">
-            <el-button type="primary" @click="createProject" :disabled="loading">新建项目</el-button>
+            <el-button type="primary" @click="createProject" :disabled="loading || !isNameValid()">新建项目</el-button>
             <el-button @click="refreshProjects" :disabled="loading">刷新</el-button>
           </div>
         </el-empty>
+      </div>
+      <div v-if="total > 0" style="display:flex;justify-content:center;margin-top:16px">
+        <el-pagination
+          :current-page="currentPage"
+          :page-size="pageSize"
+          :page-sizes="[8,12,16,24,32]"
+          layout="total, sizes, prev, pager, next, jumper"
+          :total="total"
+          @current-change="onPageChange"
+          @size-change="onSizeChange"
+        />
       </div>
     </div>
   </div>
