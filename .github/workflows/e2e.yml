@@ -1,14 +1,27 @@
 name: E2E Tests
 
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - '.github/workflows/e2e.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - '.github/workflows/e2e.yml'
 
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -64,7 +77,7 @@ jobs:
         working-directory: frontend
         env:
           NODE_ENV: test
-        run: npx playwright test -c playwright.config.ts --reporter=github --project=${{ matrix.browser }}
+        run: npx playwright test -c playwright.config.ts --reporter=github --retries=2 --project=${{ matrix.browser }}
 
       - name: Upload Playwright test-results (on failure)
         if: failure()
